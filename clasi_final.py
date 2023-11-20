@@ -4,7 +4,7 @@ import re
 from transformers import BertTokenizer, BertForSequenceClassification,AdamW
 from sklearn.model_selection import train_test_split
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
-
+from sklearn.metrics import accuracy_score,precision_score, recall_score,f1_score
 import torch
 
 #-------------CONFIGURAR DISPOSITIVO PC
@@ -12,20 +12,27 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 #-------------DIVISIÓN DEL DATASET EN UN CONJUNTO ESPECÍFICO
 # Cargo el archivo
-data = pd.read_csv(r'D:\\clasificador_emociones\\train.csv')
+data = pd.read_csv(r'D:\\clasificador_emociones\\MOVIE_BALANCE.csv')
 print("---------columnas---------")
 print(data.columns)
 
+
 # Selecciono solo los registros q necesito
-newdata_set = data.head(80000)
+#newdata_set = data.head(80000)
 
 # Guardar en una nueva carpeta
-newdata_set.to_csv("movie_data.csv",index=False)
+#newdata_set.to_csv("movie_data.csv",index=False)
+
+
+# Cargar los comentarios
+#data = pd.read_csv("movie_data.csv")
 
 
 #--------------LIMPIEZA DE DATOS CON EXP. REGULARES
 # Cargar los comentarios
-data = pd.read_csv("movie_data.csv")
+data = pd.read_csv(r'D:\\clasificador_emociones\\MOVIE_BALANCE.csv')
+
+
 
 # Limpiamos
 def clean_review(comentario):
@@ -110,30 +117,60 @@ train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=32)
 # Parámetros de entrenamiento
 optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5)
 
-num_epochs = 7
+# Nueva línea para abrir un archivo de texto en modo escritura
+with open("training_metrics.txt", "w") as f:
+    # Nuevas líneas para calcular métricas durante el entrenamiento
+    num_epochs = 10
 
-# Entrenamiento del modelo
-for epoch in range(num_epochs):
-    model.train()
-    total_loss = 0
+    for epoch in range(num_epochs):
+        model.train()
+        total_loss = 0
 
-    for batch in train_dataloader:
-        inputs, labels = batch
-        optimizer.zero_grad()
+        # Listas para almacenar predicciones y etiquetas reales
+        all_predictions = []
+        all_labels = []
 
-        # inputs a GPU
-        inputs = inputs.to('cuda')
-        labels = labels.to('cuda')
+        for batch in train_dataloader:
+            inputs, labels = batch
+            optimizer.zero_grad()
 
-        outputs = model(inputs, labels=labels)
-        loss = outputs.loss
-        total_loss += loss.item()
-        loss.backward()
-        optimizer.step()
+            # inputs a GPU
+            inputs = inputs.to('cuda')
+            labels = labels.to('cuda')
 
-    # Imprimir la pérdida promedio por época
-    print(f'Época {epoch+1}, Pérdida: {total_loss/len(train_dataloader)}')
-    
+            outputs = model(inputs, labels=labels)
+            loss = outputs.loss
+            total_loss += loss.item()
+
+            # Obtener predicciones y etiquetas reales
+            predictions = torch.argmax(outputs.logits, dim=1)
+            all_predictions.extend(predictions.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+
+            loss.backward()
+            optimizer.step()
+
+        # Calcular métricas
+        accuracy = accuracy_score(all_labels, all_predictions)
+        precision = precision_score(all_labels, all_predictions, average='weighted')
+        recall = recall_score(all_labels, all_predictions, average='weighted')
+        f1 = f1_score(all_labels, all_predictions, average='weighted')
+
+        # Imprimir las métricas y la pérdida promedio por época
+        print(f'Época {epoch+1}, Pérdida: {total_loss/len(train_dataloader)}')
+        print(f'Train accuracy: {accuracy:.2f}')
+        print(f'Train precision: {precision:.2f}')
+        print(f'Train recall: {recall:.2f}')
+        print(f'Train f1: {f1:.2f}')
+        print('------------------------------')
+
+        # Nueva línea para escribir en el archivo
+        f.write(f'Época {epoch+1}, Pérdida: {total_loss/len(train_dataloader)}\n')
+        f.write(f'Train accuracy: {accuracy:.2f}\n')
+        f.write(f'Train precision: {precision:.2f}\n')
+        f.write(f'Train recall: {recall:.2f}\n')
+        f.write(f'Train f1: {f1:.2f}\n')
+        f.write('------------------------------\n')
 
 #---------------FINALMENTE GUARDAMOS EL MODELO ENTRENADO EN UNA RUTA
 # Esto para que se pueda usar con otros comentarios
